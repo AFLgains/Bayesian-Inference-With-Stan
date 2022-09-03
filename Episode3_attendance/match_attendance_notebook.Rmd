@@ -1,0 +1,192 @@
+---
+title: "Stan Match Attendance Model Notebook"
+output: html_notebook
+---
+
+# Load packages
+```{r}
+library(dplyr)
+library(ggplot2)
+library(stats)
+library(broom)
+library(rstan) # Stan interface
+```
+
+# Load data
+```{r}
+data <- read.csv(file = file.path('data','attendance_data.csv'))
+data %>% head(10)
+```
+
+
+# Compile the stan code into an executable
+```{r}
+model <- stan_model('match_attendance_model.stan')
+```
+
+# Pass in data and configuration parameters and sample
+```{r}
+# Make data into a list for stan
+data_for_stan <- list()
+data_for_stan$N <- nrow(data)
+data_for_stan$C <- ncol(data)-1
+data_for_stan$match_attendance <- data$match_attendance
+data_for_stan$X <- data %>%
+  select(-match_attendance) %>%
+  as.matrix()
+```
+
+```{r}
+# Sample from the posterior
+samples <- sampling(object = model,
+                    data= data_for_stan,
+                    chains = 2,
+                    iter = 2000,
+                    seed = 1234)
+```
+
+# Inspect the results
+
+```{r}
+# Extract the joint posterior table
+results_joint_posterior_table <- extract(samples,pars = c('intercept','coeffs','sigma')) %>% as.data.frame()
+results_joint_posterior_table %>% head(10)
+```
+
+```{r }
+# Extract a summary of the joint posterior table
+results_summary <- summary(samples,pars = c('intercept','coeffs','sigma'))$summary
+results_summary
+```
+
+```{r}
+# Check divergences
+get_sampler_params(samples,inc_warmup = F)[[1]][,'divergent__'] %>% sum() # chain 1
+get_sampler_params(samples,inc_warmup = F)[[2]][,'divergent__'] %>% sum() # chain 2
+```
+
+# Interrogate the results
+```{r}
+# Compare with a frequentest linear regression
+freq_model <- lm(match_attendance ~ . , data = data)
+summary(freq_model)
+```
+
+```{r}
+summary_table <- tidy(freq_model)
+summary_table
+```
+
+```{r}
+# Plot and compare the intercept
+results_joint_posterior_table %>%
+  ggplot() + 
+  geom_histogram(aes(x = intercept),fill = 'transparent',color = 'black')+
+  geom_vline(aes(xintercept = summary_table$estimate[1]),color = 'red',size = 2)+
+  xlab('Intercept value')+
+  ylab('Frequency')
+```
+
+```{r}
+# Compare and plot the coefficients
+summary(samples,par = "coeffs")$summary %>%
+  cbind(summary_table %>%
+          filter(term !="(Intercept)") %>%
+          select(term,estimate)) %>%
+  arrange(desc(estimate)) %>%
+  ggplot() + 
+  geom_segment(aes(x = `2.5%`,xend= `97.5%`,y = reorder(term,estimate),yend =reorder(term,estimate)))+
+  geom_point(aes(x = estimate,y =reorder(term,estimate) ),color = 'red')+
+  geom_vline(aes(xintercept = 0),linetype = 'dashed')+
+  xlab("Effect size ('000 of people)")+
+  ylab("")
+```
+
+# Exercises
+```{r}
+# Extract sigma using "sigma" method
+sigma_estimate <- sigma(freq_model)
+
+# Plot and compare sigma
+extract(samples,pars = "sigma")%>% 
+  as.data.frame() %>% 
+  ggplot() +
+  geom_histogram(aes(x = sigma),fill = 'transparent',color = 'black')+
+  geom_vline(aes(xintercept = sigma_estimate),color = 'red',size = 2)+
+  xlab("Sigma")+
+  ylab("Frequency")
+```
+
+```{r}
+# Plot actual vs predicted
+
+# Here we need to run a simulation where for every model instance (sample), we need to predict every y (match attendance). We will use matrix algebra to vectorise this. Toggle_noise = 0 to turn off process noise and Toggle_noise = 1 to run on process noise. Without process noise, the error will purely be to finite sample size (uncertainty in the parameters).
+
+toggle_noise = 0
+
+# Measure the number of data points and number of samples
+npoints = data_for_stan$N
+niterations = length(extract(samples)$sigma)
+
+#Perform theta * x. Result = n samples x n data points
+theta_x_X = extract(samples)$coeffs %*% t(as.matrix(data_for_stan$X[1:npoints,])) 
+
+#Create  n samples x n data points sized intercept
+I = matrix(replicate(npoints,t(extract(samples)$intercept)),ncol = npoints)
+
+# Create n samples x n data points sized intercept noise term
+noise = matrix(data = 0 ,nrow = niterations,ncol = npoints)
+for (i in 1:niterations){ noise[i,] = rnorm(npoints,mean = 0,sd = extract(samples)$sigma[i]) } 
+
+# Add together to create the matrix of predicted y's
+y_pred = theta_x_X + I + toggle_noise*noise 
+```
+
+```{r }
+# For each column, find the upper, 50% and lower percentile
+prediction_summary <- apply(y_pred,2,function(x) quantile(x,probs = c(0.025,0.5,0.975))) %>% 
+  t() %>% 
+  as.data.frame()
+
+# Get the actual match attendance
+actual <- data_for_stan$match_attendance
+
+# Plot
+ggplot(data = prediction_summary) + 
+  geom_point(aes(x = actual,y = `50%`),color = 'black',size = 0.2)+
+  geom_segment(aes(y = `2.5%`,yend = `97.5%`,x = actual, xend = actual),alpha = 0.3)+
+  geom_abline(aes(slope =1, intercept = 0),color = 'red')+
+  coord_cartesian(xlim = c(0,100),ylim = c(0,100))+
+  xlab("Actual")+
+  ylab("Predicted")
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
