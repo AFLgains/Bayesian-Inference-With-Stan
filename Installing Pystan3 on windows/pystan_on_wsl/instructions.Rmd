@@ -1,0 +1,176 @@
+---
+title: "Pystan3 On WSL"
+author: "Stan Unversity"
+date: "23/10/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Instructions
+
+One way to install Pystan 3 on windows is to do so using WSL2. The general steps to install pystan 3 are as follows:
+
+1. Install WSL with a Ubuntu Distribution
+2. Download and install an Anaconda distribution onto your WSL Ubuntu VM
+3. Install GCC
+4. Install Pystan3
+
+## 1. Installing WSL with a Ubuntu Distribution
+
+a. Open windows powershell and run as administrator (right click, run as administrator) and type
+
+```
+wsl --install
+```
+b. Restart your system
+c. Open ubuntu and type your chosen credentials. For this tutorial my user name will be "stan"
+d. Type
+```
+wsl -l
+```
+to ensure you have a ubuntu distribution available
+
+## 2. Download and install an Anaconda distribution onto your WSL Ubuntu VM
+
+a. Go to your project folder. You can do this in powershell or you IDE (e.g., PyCharm). Type
+
+```
+wsl -d Ubuntu
+```
+b. Go to https://repo.continuum.io/archive and select a linux anaconda release, e.g., Anaconda3-2022.10-Linux-x86_64.sh. Choose something x86.sh for 32 bit version computer. 
+
+c. In your linux console type 
+
+```
+wget https://repo.continuum.io/archive/Anaconda3-2022.10-Linux-x86_64.sh
+```
+Obviously replace with the text with your specific version. This will download the file to your linux distro
+
+d. Install python by typing
+```
+bash Anaconda3-2022.10-Linux-x86_64.sh
+```
+
+Remember, when it asks you:
+```
+Do you wish the installer to initialise Anaconda3?
+```
+Say yes!
+
+
+e. Close the session by typing 
+
+```
+exit
+```
+
+f. Open linux again by typing
+```
+wsl -d Ubuntu
+```
+
+g. Verify everything worked by typing
+```
+which python
+```
+It should appear with the version of python in an anaconda folder. e.g., "/home/stan/anaconda3/bin/python". Here
+"stan" is the username. It will be different if you used a different user name. 
+
+If nothing appears, you will need to add python to the path. Go to trouble shooting at the end of this document.
+
+
+## 3. Install GCC
+
+a. In your linux console type:
+
+```
+sudo apt update
+sudo apt install build-essential
+sudo apt-get install manpages-dev
+```
+
+b. Verify it worked by typing
+```
+gcc --version
+```
+You should get: "/usr/bin/gcc"
+
+If you don't get anything, you need to add gcc to the path. Go to trouble shooting at the end of this document.
+
+
+## 4. Install Pystan3
+
+a. Creat a conda virtual environment. Make sure to specify the version of python you wish to use. 
+
+```
+create conda enviroment
+conda create -n stan_env python=3.9
+conda activate stan_env
+```
+b. Install pystan3
+
+```
+pip install pystan
+```
+
+c. In a text editor of your choice, create a test_stan.py file in your project folder. Fill test_stan.py with the contents test_stan.py in this repo along side these instructions
+
+d. In linux, type 
+```
+python main.py
+```
+If this works, congratulations you've now installed Pystan3 on windows through WSL2
+
+
+# Trouble shooting
+
+## Adding python to the path
+
+I find the hardest thing about working with virtual environments is setting the path so that you can use the anaconda version of python. This should get set up automatically if you downloaded anaconda properly, but it can be missed if you accidentally clicked "no" to initializing the anaconda installer. Here's how to set python on the path manually.
+
+a. Check the path variable in Linux
+
+```
+echo $PATH
+```
+If home/stan/anaconda3/bin is not on the path, you will need to add it. You can do this by editing the .bashrc file. This is a hidden file in the root directory "~"
+
+b. Navigate to root by typing 
+```
+cd ~
+```
+
+c. Then show all hidden files:
+```
+ls -a
+```
+
+d. Edit .bashrc file in vim
+```
+vi .bashrc
+```
+
+e. Use the arrow keys to scroll all the way to the bottom
+f. Press "i" to enter edit mode
+g. On a new line, type:
+
+```
+export PATH = "/home/stan/anaconda3/bin:$PATH"
+```
+Here "stan" is the username. It will be different if you used a different user name. 
+
+h. Press `ctrl+o` to exit edit mode
+i. Type `:wq!` to save and quit
+j. Exit linux and open it again
+k. type `which python`. It should now show you the location of python. 
+
+## Adding gcc to the path
+
+This is the same as the above instructions. However, what you will type in the `.bashrc` file will be:
+
+```
+export PATH = "/usr/bin/gcc:$PATH"
+```
