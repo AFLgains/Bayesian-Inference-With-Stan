@@ -112,3 +112,55 @@ d. In linux, type
 python main.py
 ```
 If this works, congratulations you've now installed Pystan3 on windows through WSL2
+
+
+# Trouble shooting
+
+## Adding python to the path
+
+I find the hardest thing about working with virtual environments is setting the path so that you can use the anaconda version of python. This should get set up automatically if you downloaded anaconda properly, but it can be missed if you accidentally clicked "no" to initializing the anaconda installer. Here's how to set python on the path manually.
+
+a. Check the path variable in Linux
+
+```
+echo $PATH
+```
+If home/stan/anaconda3/bin is not on the path, you will need to add it. You can do this by editing the .bashrc file. This is a hidden file in the root directory "~"
+
+b. Navigate to root by typing 
+```
+cd ~
+```
+
+c. Then show all hidden files:
+```
+ls -a
+```
+
+d. Edit .bashrc file in vim
+```
+vi .bashrc
+```
+
+e. Use the arrow keys to scroll all the way to the bottom
+f. Press "i" to enter edit mode
+g. On a new line, type:
+
+```
+export PATH = "/home/stan/anaconda3/bin:$PATH"
+```
+Here "stan" is the username. It will be different if you used a different user name. 
+
+h. Press `ctrl+o` to exit edit mode
+i. Type `:wq!` to save and quit
+j. Exit linux and open it again
+k. type `which python`. It should now show you the location of python. 
+
+## Adding gcc to the path
+
+This is the same as the above instructions. However, what you will type in the `.bashrc` file will be:
+
+```
+export PATH = "/usr/bin/gcc:$PATH"
+```
+
