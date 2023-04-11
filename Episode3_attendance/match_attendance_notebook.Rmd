@@ -21,7 +21,7 @@ data %>% head(10)
 
 # Compile the stan code into an executable
 ```{r}
-model <- stan_model('match_attendance_model.stan')
+#model <- stan_model('match_attendance_model.stan')
 ```
 
 # Pass in data and configuration parameters and sample

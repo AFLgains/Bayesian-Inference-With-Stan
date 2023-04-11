@@ -28,3 +28,4 @@ model {
   //likelihood
   match_attendance ~ normal(X*coeffs + intercept,sigma);//will broadcast this definition across each combination of C and match attendance
 }
+

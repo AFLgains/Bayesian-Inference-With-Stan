@@ -1,0 +1,240 @@
+---
+title: "Stan Match Outcome Model Notebook"
+output: html_notebook
+---
+
+# Load packages 
+
+```{r }
+library(dplyr)
+library(ggplot2)
+library(rstan)
+```
+
+# Load data
+```{r }
+data <- read.csv(file = file.path('data','match_data.csv'))
+data %>% tail(3)
+```
+
+```{r }
+# Select the right columns
+data <- data %>%
+  select(season,del_position,del_defense,del_offense,del_winning,home_win) %>%
+  na.omit()
+```
+
+```{r }
+# split into a test and training data set
+train_data <- data %>% filter(season < 2019)
+test_data <- data %>% filter(season == 2019)
+```
+
+# Comile the stancode into an executable
+
+```{r }
+model <- stan_model('match_outcome_model.stan')
+```
+
+# Pass data and configuration parameters and sample
+
+```{r }
+# Make data into a list for stan
+data_for_stan <- list()
+data_for_stan$N <- nrow(train_data)
+data_for_stan$C <- ncol(train_data) -2
+data_for_stan$X_train <- train_data %>% select(-season,-home_win) %>% as.matrix()
+data_for_stan$match_outcome <- train_data$home_win
+data_for_stan$N_test <- nrow(test_data)
+data_for_stan$X_test <- test_data %>% select(-season,-home_win) %>% as.matrix()
+```
+
+```{r }
+# Sample from the posterior
+samples <- sampling(object = model,
+                    data = data_for_stan,
+                    chains = 2,
+                    iter = 2000,
+                    seed = 1234)
+
+```
+
+# Inspect the results
+
+```{r }
+results_jpt <- extract(samples,par = c('intercept','coeffs')) %>% as.data.frame()
+results_jpt
+```
+
+```{r }
+results_summary <- summary(samples,par = c('intercept','coeffs'))$summary %>% as.data.frame()
+results_summary
+```
+
+# Check divergences
+
+```{r }
+get_sampler_params(samples,inc_warmup = FALSE)[[1]][,'divergent__'] %>% sum()
+get_sampler_params(samples,inc_warmup = FALSE)[[2]][,'divergent__'] %>% sum()
+```
+
+# Check pairs plot
+```{r }
+pairs(samples,pars = c('intercept','coeffs'))
+```
+
+# Interrogate results
+
+```{r }
+# Intercept
+extract(samples,pars = 'intercept') %>%
+  as.data.frame() %>%
+  ggplot() +
+  geom_histogram(aes(x = intercept),fill = 'transparent',color = 'black') + 
+  xlab('Intercept value') + 
+  ylab('Frequency')
+
+```
+
+```{r }
+# Plot the coefficients
+summary(samples,pars = 'coeffs')$summary %>%
+  as.data.frame() %>%
+  mutate(term = data %>% select(-home_win,-season) %>% names()) %>%
+  ggplot() + 
+  geom_segment(aes(x = `2.5%`,xend=`97.5%`,y = reorder(term,mean),yend = reorder(term,mean)))+
+  geom_point(aes(x = mean, y = reorder(term,mean), color = 'red'))+
+  geom_vline(aes(xintercept = 0),linetype = 'dashed')+
+  xlab('Effect size')+
+  ylab('')
+
+```
+
+# Test set performance
+
+```{r }
+summary(samples,pars = 'y_pred_test')$summary %>% head()
+```
+
+```{r }
+prediction_summary <- summary(samples,pars = 'y_pred_test')$summary %>%
+  as.data.frame() %>%
+  mutate(actual_outcome = test_data$home_win) %>%
+  arrange(desc(`50%`)) %>%
+  mutate(game_id = 1:n())
+
+```
+
+```{r }
+prediction_summary %>%
+  ggplot() + 
+  geom_segment(aes(y = `2.5%`,
+                   yend = `97.5%`,
+                   x = game_id,
+                   xend = game_id,
+                   color = factor(actual_outcome)),alpha = 0.3)+
+  geom_point(aes(x = game_id, y = `50%`,color = factor(actual_outcome)))+
+  coord_cartesian(xlim = c(0,nrow(prediction_summary)),ylim = c(0,1)) + 
+  xlab('game_id')+
+  ylab('Predicted prbability')
+
+```
+
+## Calcualte the range of out of sample accuracy
+
+```{r }
+test_pred_matrix <- extract(samples)$y_pred_test
+test_pred_matrix[test_pred_matrix>0.5] = 1
+test_pred_matrix[test_pred_matrix<=0.5] = 0 
+actual_outcome = test_data$home_win
+
+calc_accuracy <- function(est){
+  return(mean(est == actual_outcome))
+}
+accuracy_range <- apply(test_pred_matrix,1,calc_accuracy)
+hist(accuracy_range)
+
+```
+
+# Exercises:
+
+## 1. Manually calculate the test set probabilities
+
+```{r }
+# Here we need to run a simulation where for every model instance (sample), we need to predict every y (match attendance). We will use matrix algebra to vectorise this.
+
+inv_logit = function(x){
+  return( exp(x)/(1+exp(x)))
+}
+
+# Measure the number of data points and number of samples
+npoints = data_for_stan$N_test
+niterations = length(extract(ep4_samples)$intercept)
+ncoeffs = data_for_stan$C
+
+#Perform theta * x. Result = n samples x n data points
+theta_x_X = extract(ep4_samples)$coeffs %*% t(as.matrix(data_for_stan$X_test[1:npoints,])) 
+
+#Create  n samples x n data points sized intercept
+I = matrix(extract(ep4_samples)$intercept,ncol = 1)[,rep(1,each= npoints)]
+
+# Add together to create the matrix of predicted y's
+y_pred = inv_logit(theta_x_X + I)
+
+# Summarise each point
+prediction_summary <- apply(y_pred,2,function(x) quantile(x,probs = c(0.025,0.5,0.975))) %>% 
+  t() %>% 
+  as.data.frame() %>%
+  mutate(actual_outcome = test_data$match_outcome) %>%
+  arrange(desc(`50%`)) %>%
+  mutate(game_id = 1:n())
+
+
+# Plot
+ggplot(data = prediction_summary) + 
+  geom_segment(aes(y = `2.5%`,
+                   yend = `97.5%`,
+                   x = game_id, 
+                   xend = game_id,
+                   color = factor(actual_outcome) ),alpha = 0.3)+
+  geom_point(aes(x = game_id, y = `50%`,color = factor(actual_outcome)))+
+  coord_cartesian(xlim = c(0,npoints),ylim = c(0,1))+
+  xlab("Actual")+
+  ylab("Predicted")
+
+```
+
+
+## 2. Calculate the range of ROC AUCs of the model.
+
+
+```{r }
+library(pROC)
+oos_pred_matrix <- extract(ep4_samples)$y_pred_test
+oos_pred_matrix[oos_pred_matrix<0.5] = 0
+oos_pred_matrix[oos_pred_matrix>=0.5] = 1
+actual_outcome = test_data$home_win
+
+calc_auc <- function(est){
+  return(auc(actual_outcome,est))
+}
+auc_range <- apply(oos_pred_matrix,1,calc_auc)
+hist(auc_range)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
